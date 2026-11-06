@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.venv/
+venv/
+
+# IDE and local configuration
+.idea/
+.vscode/
+
+# Build outputs
+build/
+dist/
+*.spec
+
+# Recordings and participant data
+*.csv
+data/
+
+# OS files
+.DS_Store
+Thumbs.db
