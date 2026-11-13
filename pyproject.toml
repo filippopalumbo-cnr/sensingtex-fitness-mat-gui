@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "the-gui-mat-features"
+version = "0.1.0"
+description = "Offline recording-level CoP and contact features for the SensingTex Fitness Mat GUI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = ["numpy>=1.24,<3", "scipy>=1.10,<2", "tzdata>=2024.1"]
+
+[project.optional-dependencies]
+plots = ["matplotlib>=3.7,<4"]
+
+[project.scripts]
+mat-features = "mat_features.cli:main"
+
+[tool.setuptools]
+packages = ["mat_features"]

@@ -1,24 +1,24 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyd
-*.so
+# Private participant recordings, scores, and generated analysis results
+*.csv
+*.CSV
+*.npz
+**/plots/
+**/traces/
+**/run_manifest.json
+data/
+outputs/
+demo_data/
+demo_results/
+private/
+
+# Local Python environments and build output
 .venv/
 venv/
-
-# IDE and local configuration
-.idea/
-.vscode/
-
-# Build outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
 build/
 dist/
-*.spec
-
-# Recordings and participant data
-*.csv
-data/
-
-# OS files
+.pytest_cache/
 .DS_Store
 Thumbs.db

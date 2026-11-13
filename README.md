@@ -1,118 +1,118 @@
-# SensingTex Fitness Mat GUI
+# SensingTex Fitness Mat GUI and offline features
 
-A Python desktop application for real-time visualization and recording of pressure-map frames from a SensingTex Fitness Mat. The supplied configuration is for an 80 × 28 sensor grid. The GUI displays a heatmap and a pressure-weighted center-of-pressure (CoP) marker; the marker is a grid-coordinate estimate, not a calibrated clinical or force measurement.
+Python software for collecting and displaying **80 × 28** SensingTex Fitness Mat frames, with an offline package for reproducible centre-of-pressure (CoP) and contact features. Developed in the Tuscany Health Ecosystem (THE) project.
 
-The software was developed for research data collection. It has not been validated as a diagnostic or clinical device.
+The repository contains two independently usable components:
 
-## Features
+| Component | Entry point | Purpose |
+| --- | --- | --- |
+| Desktop GUI | `python main.py` | Serial acquisition, live heatmap and CoP marker, CSV recording |
+| Offline extractor | `python -m mat_features` or `mat-features` | Batch processing, four recording-level features, quality audit, traces and plots |
 
-- Requests active pressure points from the mat over a serial connection and reconstructs an 80 × 28 matrix.
-- Displays the pressure map in a separate Matplotlib window, with a configurable colorbar.
-- Calculates a CoP marker from the displayed pressure map when its total value reaches the configured minimum.
-- Applies a per-cell noise threshold to the map before display and recording.
-- Optionally applies a binary morphological opening to the displayed map to suppress small isolated regions.
-- Records a host timestamp and 2,240 sensor values per accepted frame in CSV format.
+The extractor works without a connected mat or Qt. The desktop application’s operation and device-specific assumptions are described in [docs/GUI.md](docs/GUI.md).
 
-## Hardware and software
+## What is extracted?
 
-- SensingTex Fitness Mat configured as 80 rows × 28 columns. Other dimensions require changes to `ROWS` and `COLS` in `constants.py` and verification of parsing, orientation, and CoP calculations.
-- Serial connection to the mat. Choose the port reported by the operating system, such as `COM3` or `/dev/ttyUSB0`.
-- Python 3.12 and the packages listed in `requirements.txt`.
-- Windows was the original target environment. Other operating systems and serial adapters require verification.
+| Output column | Meaning | Unit |
+| --- | --- | --- |
+| `cop_speed` | CoP path length divided by the selected interval's duration | Grid cells/s |
+| `cop_ellipse` | Area of the 95% covariance ellipse of the CoP trajectory | Grid cells² |
+| `load_cv` | Variability of total sensor response relative to its mean | Ratio |
+| `contact_cv` | Variability of the number of active cells relative to its mean | Ratio |
 
-## Installation
+Additional columns include path length, both CVs as percentages, interval boundaries, occupancy, quality flags, source hashes and filename/date checks. Sensor response is in device counts; this software does not convert it to newtons, kilograms or calibrated pressure.
 
-From the extracted project directory, create and activate a virtual environment:
+The automatic interval selector finds the **longest continuously occupied interval**, separating unloaded frames and acquisition gaps. It does not identify individual squat or deadlift events. Features describe the selected interval, which can contain preparation or recovery. Review the diagnostic plots before interpreting a recording as a particular exercise.
 
-```bash
-python -m venv .venv
-```
+## Quick start on Windows
+
+Install Python 3.12, open a terminal in the repository directory, and run:
 
 ```powershell
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install ".[plots]"
+.\.venv\Scripts\python.exe -m mat_features demo --output demo_data
+.\.venv\Scripts\python.exe -m mat_features extract demo_data --output demo_results --plots --save-traces
 ```
 
-```bash
-# macOS/Linux
-source .venv/bin/activate
+The example is generated mathematically and labelled **SYNTHETIC**. No participant recordings or scores are included.
+
+For your recordings, use a separate output folder for each run:
+
+```powershell
+.\.venv\Scripts\python.exe -m mat_features extract "C:\THE\recordings" --output "C:\THE\feature_results" --plots --save-traces
 ```
 
-Install the dependencies and launch the application:
+Directories are searched recursively. The original folder hierarchy is recorded in `source_path`, so files with the same basename remain distinct. CSVs without a mat-like first row are listed in `skipped_files.csv`; explicit file inputs are always validated. Trainer-score CSVs are not analysis inputs.
 
-```bash
-python -m pip install -r requirements.txt
-python main.py
+To also run the live GUI:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
 ```
 
-## Use
+Run these commands from the repository root. The GUI uses the original pinned dependencies in `requirements.txt`; offline dependencies are declared in `pyproject.toml`. On Linux/macOS use `python3 -m venv .venv` and `.venv/bin/python` in place of the Windows executable.
 
-1. Connect the mat and identify its serial port.
-2. Start the application and enter that port in **COM Port**.
-3. Enter a filename base and choose an output directory.
-4. Select **Start Recording**. The application opens the serial connection, starts acquisition, and displays the live plot.
-5. Use **Enable/Disable Blob Filter** and **Show/Hide Colorbar** to change the visualization.
-6. Select **Stop Recording**. The collected rows are written to a CSV file.
+## Outputs
 
-The serial worker runs in a background `QThread`; frames are delivered to the GUI through Qt signals. The application does not enforce a fixed sampling frequency. The timestamp is generated on the host when the GUI handles a received frame, not by the mat.
+| File | Contents |
+| --- | --- |
+| `features.csv` | One row per recording and extraction setting, including explicit ineligible rows with blank features |
+| `quality_audit.csv` | One row per successfully parsed recording, dates, frame counts, SHA-256, gaps and quality flags |
+| `processing_errors.csv` | Files rejected because of malformed data, inconsistent dates or read errors |
+| `skipped_files.csv` | Non-mat CSVs ignored during directory discovery |
+| `run_manifest.json` | Exact configuration, software versions, processing counts and header policy |
+| `traces/*.npz` | Optional primary-setting signals and selected maps; numeric arrays loadable with `allow_pickle=False` |
+| `plots/*.png` | Optional primary-setting diagnostic plots |
 
-## Serial frame handling
+Quality flags **do not remove estimates**. Invalid recordings receive an error record; valid recordings without an eligible interval receive a blank feature row. The command exits with code `2` if any recording fails validation, while retaining the valid outputs for inspection. A clean run, including properly reported ineligible intervals, exits with code `0`. Existing nonempty output folders are refused.
 
-The application opens the configured port at 115,200 baud. It sends `R` to request a map and expects an `N\n` response header, a two-byte big-endian active-point count, and four bytes per point: value high byte, value low byte, x coordinate, and y coordinate. Point values are reconstructed as `(high_byte << 8) | low_byte`. Valid points populate a zero-initialized matrix; absent cells remain zero and out-of-range coordinates are ignored. If a coordinate occurs more than once in a frame, the later value overwrites the earlier one.
+## Example plot
 
-The current parser skips the first active point in each frame to work around an anomalous point observed with the mat configuration used during development. This is a device/firmware-specific workaround and should be verified before using a different mat or firmware. Incomplete or invalid frames are discarded; frames that do not produce a valid matrix are not recorded.
+![Synthetic example showing the selected interval, CoP trajectory, contact area and sensor map](docs/synthetic_example.png)
 
-## Processing and visualization
+This figure is generated from the included synthetic-data generator. The highlighted interval is selected automatically; it is not an annotated exercise event.
 
-The default `NOISE_THRESHOLD` is 150. Before plotting, values below this threshold are set to zero. This operation is applied in place to the reshaped frame array, so it also changes the values subsequently written to CSV.
+## Configuration and earlier-analysis compatibility
 
-The optional blob filter is disabled by default. When enabled, it makes a binary mask of the nonzero thresholded cells, applies one binary opening using a two-dimensional four-neighbour cross-shaped structuring element, and masks the values with the result. The filter changes the displayed heatmap and CoP calculation, but it is applied to a new array and does not affect the CSV values.
+Defaults: threshold 150 counts, occupancy at least 5,000 counts or 20% of median positive response (whichever is higher), gaps split above 1 s, raw interval at least 5 s and 6 frames, resampling at the interval's median spacing, Gaussian smoothing with standard deviation 0.25 s.
 
-For display, the selected 80 × 28 matrix is transposed and flipped vertically, producing a 28 × 80 array equivalent to a 90° counterclockwise rotation in NumPy array coordinates. This transform is only used for plotting; the CSV retains the acquisition orientation. The plot uses the `plasma` colormap with fixed limits `vmin=0` and `vmax=1800`. These limits control color mapping only: the data are not divided by 1,800 or normalized frame by frame. Values outside the display range appear at the ends of the color scale.
-
-The CoP marker is calculated from the thresholded map, or from the filtered map when blob filtering is enabled. If the sum of the displayed matrix is below `COP_MIN_TOTAL_PRESSURE` (default 5,000), no marker is shown. Otherwise, for displayed matrix `V` with row index `i` and column index `j`,
-
-```text
-x_CoP = sum(i,j) [j * V[i,j]] / sum(i,j) V[i,j]
-y_CoP = sum(i,j) [i * V[i,j]] / sum(i,j) V[i,j]
+```powershell
+.\.venv\Scripts\python.exe -m mat_features extract "C:\THE\recordings" --output "C:\THE\sensitivity_results" --config config\default.json --sensitivity
 ```
 
-The coordinates are sensor-grid indices. The vertical index increases down the displayed image because Matplotlib uses `origin='upper'`. Conversion to millimetres or physical pressure requires a validated spatial mapping and sensor calibration, neither of which is performed by this application.
+`--sensitivity` adds thresholds 100/150/200 and symmetric end trims of 0/10%, retaining the configured primary setting. The configuration and all outcomes are exported; no condition or score is used to select a favourable setting.
 
-## CSV format and interpretation
+**Header correction:** older analysis scripts unconditionally skipped the first CSV line. Historical headerless recordings therefore lost one data frame each. This release detects the header and preserves all data rows by default. To reproduce that specific earlier processing behaviour, use:
 
-The filename starts with a host timestamp in milliseconds, followed by the user-provided filename base and `.csv`. The CSV contains one row for each valid frame received while recording:
+```powershell
+.\.venv\Scripts\python.exe -m mat_features extract "C:\THE\recordings" --output "C:\THE\legacy_results" --legacy-skip-first-line --sensitivity
+```
 
-- `Timestamp`: host Unix time in seconds, captured when the GUI handles the frame.
-- `Sensor_0` through `Sensor_2239`: the matrix flattened in NumPy's default C (row-major) order.
+Compatibility mode is explicitly recorded in the output and is intended for reproducibility. Do not mix results produced with different header policies. See [validation and migration notes](docs/VALIDATION.md) for the measured effect on the available historical recordings.
 
-**The CSV is not an untouched raw sensor stream.** The in-place noise threshold is applied before the row is buffered, so every value below 150 is saved as zero by default. The optional blob filter and plot-orientation transform are not applied to the saved values. The CSV has no participant ID, task label, feedback condition, trainer score, or device-side timestamp. Keep study metadata in a separate, access-controlled file and do not commit participant recordings to this repository.
+## Python API
 
-## Configuration
+```python
+from mat_features import ExtractionConfig, extract_file
 
-Edit `constants.py` to change the sensor dimensions, noise threshold, minimum total value for showing CoP, colormap limits, color map, marker size, default serial port, and default save path. The supplied default save path is Windows-specific (`C:/THE/`). The serial worker currently uses a baud rate of 115,200 as a constructor default; changing `DEFAULT_BAUD_RATE` in `constants.py` alone has no effect because that constant is not currently passed to the worker.
+result = extract_file("recording.csv", ExtractionConfig(), sensitivity=True)
+for row in result.features:
+    if row["is_primary"] and row["status"] == "ok":
+        print(row["cop_speed"], row["cop_ellipse"], row["qc_flags"])
+```
 
-Relevant defaults are:
+`extract_arrays(timestamps, sensor_matrix, config)` also accepts an N-element time vector and an N × 2240 sensor array. Inputs are not modified. See [docs/FEATURES.md](docs/FEATURES.md) for coordinate conventions, units, segmentation, filtering, quality policies and the output schema.
 
-| Setting | Default | Effect |
-| --- | ---: | --- |
-| `ROWS`, `COLS` | 80, 28 | Sensor matrix dimensions |
-| `NOISE_THRESHOLD` | 150 | Zeroes lower-valued cells in both display and saved CSV values |
-| `COP_MIN_TOTAL_PRESSURE` | 5,000 | Minimum displayed-map sum for showing CoP |
-| `ARTIFACT_FILTER_ENABLED` | `False` | Initial state of optional display filter |
-| `VIS_VMAX` | 1,800 | Upper heatmap color scale bound; does not rescale saved data |
-| Worker baud rate | 115,200 | Hard-coded default in `Worker`; `DEFAULT_BAUD_RATE` is currently unused |
+## Tests
 
-## Source files
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
 
-- `main.py`: application entry point.
-- `main_window.py`: recording controls, frame handling, visualization preprocessing, and CSV output.
-- `plot_window.py`: heatmap, colorbar, and CoP marker.
-- `worker.py`: background serial-acquisition thread.
-- `sensor_protocol.py`: serial request and frame parser.
-- `data_processing.py`: CoP calculation and optional binary morphological opening.
-- `constants.py`: dimensions and configuration defaults.
+Install `.[plots]` before running the full suite. Fixtures are generated synthetic arrays; no study dataset is needed. Tests cover numerical definitions, header handling, malformed data, gap splitting, date checks, source identity, CLI errors, traces and plotting. Tested versions and historical-recording comparisons are documented in [docs/VALIDATION.md](docs/VALIDATION.md).
 
 ## License
 
-This project is distributed under the Apache License 2.0; see [`LICENSE`](LICENSE).
+Apache License 2.0; see [LICENSE](LICENSE). No calibration, clinical validation or validated task recognition is implied by the research feature definitions.
